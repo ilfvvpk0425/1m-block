@@ -9,7 +9,7 @@ HDRS    := src/domainset.h src/sniff.h
 all: 1m-block
 
 1m-block: src/main.c $(CORE) $(HDRS)
-	$(CC) $(CFLAGS) -o $@ src/main.c $(CORE) -lnetfilter_queue
+	$(CC) $(CFLAGS) -o $@ src/main.c $(CORE) -lnetfilter_queue -lnfnetlink
 
 test: tests/test.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) $(SAN) -o build-test tests/test.c $(CORE)

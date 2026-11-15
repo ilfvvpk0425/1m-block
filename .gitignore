@@ -1,0 +1,6 @@
+1m-block
+build-test
+build-bench
+*.o
+test_list.tmp
+data/

@@ -1,0 +1,30 @@
+--- run 
+load      : 1000000 domains in 0.233 s, set 48.1 MiB (table 32.0 + arena 16.1), RSS +56.0 MiB
+hash set  : exact  match, 137 ns/lookup (7.3 M lookups/s), hit rate 25.0%
+hash set  : suffix match, 239 ns/lookup (4.2 M lookups/s), hit rate 50.0%
+linear    : miss 2.32 ms/lookup (431 lookups/s) -> 16969x slower than hash exact
+linear    : hit  1.24 ms/lookup on average (random rank)
+parse     : http GET ( 234 B) 79.7 ns/packet, found host www.example.com
+parse     : tls CH   ( 552 B) 19.8 ns/packet, found host www.example.com
+parse     : other    (1240 B) 4.5 ns/packet, found host -
+RSS peak  : 131.7 MiB
+--- run 
+load      : 1000000 domains in 0.201 s, set 48.1 MiB (table 32.0 + arena 16.1), RSS +56.1 MiB
+hash set  : exact  match, 133 ns/lookup (7.5 M lookups/s), hit rate 25.0%
+hash set  : suffix match, 224 ns/lookup (4.5 M lookups/s), hit rate 50.0%
+linear    : miss 2.34 ms/lookup (428 lookups/s) -> 17559x slower than hash exact
+linear    : hit  1.09 ms/lookup on average (random rank)
+parse     : http GET ( 234 B) 68.3 ns/packet, found host www.example.com
+parse     : tls CH   ( 552 B) 19.1 ns/packet, found host www.example.com
+parse     : other    (1240 B) 4.5 ns/packet, found host -
+RSS peak  : 131.9 MiB
+--- run 
+load      : 1000000 domains in 0.190 s, set 48.1 MiB (table 32.0 + arena 16.1), RSS +56.1 MiB
+hash set  : exact  match, 132 ns/lookup (7.6 M lookups/s), hit rate 25.0%
+hash set  : suffix match, 216 ns/lookup (4.6 M lookups/s), hit rate 50.0%
+linear    : miss 2.20 ms/lookup (454 lookups/s) -> 16688x slower than hash exact
+linear    : hit  1.10 ms/lookup on average (random rank)
+parse     : http GET ( 234 B) 75.2 ns/packet, found host www.example.com
+parse     : tls CH   ( 552 B) 19.6 ns/packet, found host www.example.com
+parse     : other    (1240 B) 4.5 ns/packet, found host -
+RSS peak  : 131.9 MiB

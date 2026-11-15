@@ -13,9 +13,26 @@ static int same_conn(const sniff_flow *a, const sniff_flow *b) {
            memcmp(a->src, b->src, 16) == 0 && memcmp(a->dst, b->dst, 16) == 0;
 }
 
+/* A connection may live in one of ENGINE_PROBE slots starting at hash(4-tuple).
+ * Bounded probing keeps the per-packet cost constant: scanning the whole table
+ * on every data packet cost ~20% throughput when every packet is queued. */
+#define ENGINE_PROBE 16
+
+static size_t conn_hash(const sniff_flow *k) {
+    uint32_t h = 2166136261u;
+    const uint8_t *parts[2] = { k->src, k->dst };
+    size_t n = k->version == 6 ? 16 : 4;
+    for (int p = 0; p < 2; p++)
+        for (size_t i = 0; i < n; i++) { h ^= parts[p][i]; h *= 16777619u; }
+    h ^= (uint32_t)k->sport << 16 | k->dport;
+    h *= 16777619u;
+    return h & (ENGINE_FLOWS - 1);
+}
+
 static engine_flow *find(engine *e, const sniff_flow *k, double now) {
-    for (int i = 0; i < ENGINE_FLOWS; i++) {
-        engine_flow *f = &e->flows[i];
+    size_t h = conn_hash(k);
+    for (int i = 0; i < ENGINE_PROBE; i++) {
+        engine_flow *f = &e->flows[(h + (size_t)i) & (ENGINE_FLOWS - 1)];
         if (!f->used) continue;
         if (now - f->t > ENGINE_TIMEOUT) { f->used = 0; continue; }
         if (same_conn(&f->key, k)) return f;
@@ -24,13 +41,14 @@ static engine_flow *find(engine *e, const sniff_flow *k, double now) {
 }
 
 static engine_flow *add(engine *e, const sniff_flow *k, double now) {
-    engine_flow *victim = &e->flows[0];
-    for (int i = 0; i < ENGINE_FLOWS; i++) {
-        engine_flow *f = &e->flows[i];
+    size_t h = conn_hash(k);
+    engine_flow *victim = &e->flows[h];
+    for (int i = 0; i < ENGINE_PROBE; i++) {
+        engine_flow *f = &e->flows[(h + (size_t)i) & (ENGINE_FLOWS - 1)];
         if (!f->used || now - f->t > ENGINE_TIMEOUT) { victim = f; goto take; }
         if (f->t < victim->t) victim = f;
     }
-    e->evicted++;                                            /* table full: reuse the oldest */
+    e->evicted++;                                            /* probe window full: reuse the oldest */
 take:
     victim->used = 1;
     victim->blocked = 0;

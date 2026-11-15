@@ -1,60 +1,66 @@
 ##### round
 == baseline: no NFQUEUE rule
- 64.15 Gbit/s      5493 k packets/s  (cpu sender 101%)
+ 65.95 Gbit/s      5647 k packets/s  (cpu sender 103%)
 == NFQUEUE + 1m-block (1M domains)
-  3.08 Gbit/s       264 k packets/s  (cpu sender 6%)
+  3.03 Gbit/s       260 k packets/s  (cpu sender 7%)
+  | loaded 1000000 domains in 0.19 s (set 48.1 MiB, max RSS 57.3 MiB)
+  | listening on queue 8 (subdomains too, dropping matches)
+  | 
+  | packets 2097046 (with host: http 0, tls 0), blocked packets 0
+  | reassembled 0, gave up 0, evicted 0
+== NFQUEUE + 1m-block monitor mode (-n)
+  3.02 Gbit/s       258 k packets/s  (cpu sender 7%)
+== rule present, no listener (--queue-bypass)
+ 62.57 Gbit/s      5357 k packets/s  (cpu sender 102%)
+== NFQUEUE (first 10 packets per connection only) + 1m-block
+ 61.89 Gbit/s      5299 k packets/s  (cpu sender 104%)
   | loaded 1000000 domains in 0.19 s (set 48.1 MiB, max RSS 57.4 MiB)
   | listening on queue 8 (subdomains too, dropping matches)
   | 
-  | packets 2129636 (with host: http 0, tls 0), blocked packets 0
-== NFQUEUE + 1m-block monitor mode (-n)
-  3.04 Gbit/s       260 k packets/s  (cpu sender 7%)
-== rule present, no listener (--queue-bypass)
- 61.99 Gbit/s      5307 k packets/s  (cpu sender 102%)
-== NFQUEUE (first 10 packets per connection only) + 1m-block
- 60.90 Gbit/s      5214 k packets/s  (cpu sender 101%)
-  | loaded 1000000 domains in 0.21 s (set 48.1 MiB, max RSS 57.5 MiB)
-  | listening on queue 8 (subdomains too, dropping matches)
-  | 
-  | packets 64 (with host: http 0, tls 0), blocked packets 0
+  | packets 61 (with host: http 0, tls 0), blocked packets 0
+  | reassembled 0, gave up 0, evicted 0
 ##### round
 == baseline: no NFQUEUE rule
- 66.37 Gbit/s      5682 k packets/s  (cpu sender 104%)
+ 65.34 Gbit/s      5595 k packets/s  (cpu sender 103%)
 == NFQUEUE + 1m-block (1M domains)
-  3.07 Gbit/s       263 k packets/s  (cpu sender 7%)
-  | loaded 1000000 domains in 0.19 s (set 48.1 MiB, max RSS 57.4 MiB)
-  | listening on queue 8 (subdomains too, dropping matches)
-  | 
-  | packets 2122379 (with host: http 0, tls 0), blocked packets 0
-== NFQUEUE + 1m-block monitor mode (-n)
-  3.07 Gbit/s       263 k packets/s  (cpu sender 7%)
-== rule present, no listener (--queue-bypass)
- 62.75 Gbit/s      5373 k packets/s  (cpu sender 101%)
-== NFQUEUE (first 10 packets per connection only) + 1m-block
- 61.25 Gbit/s      5244 k packets/s  (cpu sender 104%)
+  3.00 Gbit/s       257 k packets/s  (cpu sender 7%)
   | loaded 1000000 domains in 0.20 s (set 48.1 MiB, max RSS 57.4 MiB)
   | listening on queue 8 (subdomains too, dropping matches)
   | 
-  | packets 57 (with host: http 0, tls 0), blocked packets 0
+  | packets 2073608 (with host: http 0, tls 0), blocked packets 0
+  | reassembled 0, gave up 0, evicted 0
+== NFQUEUE + 1m-block monitor mode (-n)
+  3.03 Gbit/s       260 k packets/s  (cpu sender 7%)
+== rule present, no listener (--queue-bypass)
+ 63.63 Gbit/s      5448 k packets/s  (cpu sender 103%)
+== NFQUEUE (first 10 packets per connection only) + 1m-block
+ 61.64 Gbit/s      5278 k packets/s  (cpu sender 103%)
+  | loaded 1000000 domains in 0.21 s (set 48.1 MiB, max RSS 57.3 MiB)
+  | listening on queue 8 (subdomains too, dropping matches)
+  | 
+  | packets 61 (with host: http 0, tls 0), blocked packets 0
+  | reassembled 0, gave up 0, evicted 0
 ##### round
 == baseline: no NFQUEUE rule
- 65.74 Gbit/s      5628 k packets/s  (cpu sender 104%)
+ 65.15 Gbit/s      5578 k packets/s  (cpu sender 102%)
 == NFQUEUE + 1m-block (1M domains)
-  3.17 Gbit/s       271 k packets/s  (cpu sender 7%)
-  | loaded 1000000 domains in 0.20 s (set 48.1 MiB, max RSS 57.4 MiB)
+  3.04 Gbit/s       261 k packets/s  (cpu sender 7%)
+  | loaded 1000000 domains in 0.21 s (set 48.1 MiB, max RSS 57.4 MiB)
   | listening on queue 8 (subdomains too, dropping matches)
   | 
-  | packets 2187275 (with host: http 0, tls 0), blocked packets 0
+  | packets 2102863 (with host: http 0, tls 0), blocked packets 0
+  | reassembled 0, gave up 0, evicted 0
 == NFQUEUE + 1m-block monitor mode (-n)
-  3.13 Gbit/s       268 k packets/s  (cpu sender 7%)
+  3.07 Gbit/s       263 k packets/s  (cpu sender 7%)
 == rule present, no listener (--queue-bypass)
- 63.85 Gbit/s      5467 k packets/s  (cpu sender 104%)
+ 63.11 Gbit/s      5404 k packets/s  (cpu sender 103%)
 == NFQUEUE (first 10 packets per connection only) + 1m-block
- 61.86 Gbit/s      5297 k packets/s  (cpu sender 104%)
+ 61.38 Gbit/s      5255 k packets/s  (cpu sender 102%)
   | loaded 1000000 domains in 0.20 s (set 48.1 MiB, max RSS 57.4 MiB)
   | listening on queue 8 (subdomains too, dropping matches)
   | 
-  | packets 64 (with host: http 0, tls 0), blocked packets 0
+  | packets 61 (with host: http 0, tls 0), blocked packets 0
+  | reassembled 0, gave up 0, evicted 0
 #### after
 -P OUTPUT ACCEPT
 no iperf3 left

@@ -3,8 +3,8 @@ CFLAGS  ?= -O2 -g
 CFLAGS  += -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
 
-CORE    := src/domainset.c src/sniff.c
-HDRS    := src/domainset.h src/sniff.h
+CORE    := src/domainset.c src/sniff.c src/engine.c
+HDRS    := src/domainset.h src/sniff.h src/engine.h
 
 all: 1m-block
 

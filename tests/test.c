@@ -5,6 +5,7 @@
 
 #include "../src/domainset.h"
 #include "../src/sniff.h"
+#include "../src/engine.h"
 
 static int fails, checks;
 #define CHECK(cond) do { checks++; if (!(cond)) { fails++; \
@@ -25,7 +26,7 @@ static size_t build_tcp(uint8_t *buf, int v6, const uint8_t *payload, size_t ple
         buf[8] = 64; buf[9] = 6;
     }
     buf[ip + 12] = 5 << 4;                                   /* data offset = 20 bytes */
-    memcpy(buf + ip + tcp, payload, plen);
+    if (plen) memcpy(buf + ip + tcp, payload, plen);
     return total;
 }
 
@@ -150,7 +151,11 @@ static void test_http(void) {
 
     req = "GET / HTTP/1.1\r\nHost: cut.te";                               /* segment ends mid-header */
     n = build_tcp(pkt, 0, (const uint8_t *)req, strlen(req));
-    CHECK(sniff_str(pkt, n, host) == SNIFF_NONE);
+    CHECK(sniff_str(pkt, n, host) == SNIFF_MORE);
+
+    req = "GET / HTTP/1.1\r\nCookie: a=b\r\n";                             /* headers continue later */
+    n = build_tcp(pkt, 0, (const uint8_t *)req, strlen(req));
+    CHECK(sniff_str(pkt, n, host) == SNIFF_MORE);
 
     req = "HTTP/1.1 200 OK\r\nHost: response.test\r\n\r\n";             /* not a request */
     n = build_tcp(pkt, 0, (const uint8_t *)req, strlen(req));
@@ -189,13 +194,14 @@ static void test_tls(void) {
     n = build_tcp(pkt, 1, ch, chn);
     CHECK(sniff_str(pkt, n, host) == SNIFF_TLS && strcmp(host, "www.Netflix.com") == 0);
 
-    /* every truncation must fail cleanly (SNI is the last extension) */
+    /* every truncation (SNI is the last extension) must ask for more bytes, never misparse */
     int bad = 0;
-    for (size_t cut = 0; cut < chn; cut++) {
+    for (size_t cut = 1; cut < chn; cut++) {
         size_t hl; char h[SNIFF_HOST_MAX + 1];
-        if (sniff_tls(ch, cut, h, &hl) != SNIFF_NONE) bad++;
+        if (sniff_tls(ch, cut, h, &hl) != SNIFF_MORE) bad++;
     }
     CHECK(bad == 0);
+    { size_t hl; CHECK(sniff_tls(ch, 0, host, &hl) == SNIFF_NONE); }
 
     /* lying length fields */
     uint8_t tmp[1024];
@@ -230,11 +236,155 @@ static void test_fuzz(void) {
         uint8_t *heap = malloc(n ? n : 1);                               /* exact-size buffer for ASan */
         memcpy(heap, pkt, n);
         char host[SNIFF_HOST_MAX + 1]; size_t hl = 0;
-        if (sniff_packet(heap, n, host, &hl) != SNIFF_NONE && (hl == 0 || hl > SNIFF_HOST_MAX || strlen(host) != hl))
+        sniff_kind k = sniff_packet(heap, n, host, &hl);
+        if ((k == SNIFF_HTTP || k == SNIFF_TLS) && (hl == 0 || hl > SNIFF_HOST_MAX || strlen(host) != hl))
             weird++;
         free(heap);
     }
     CHECK(weird == 0);
+}
+
+/* ---------------------------------------------------------------- engine */
+
+/* IPv4/TCP segment with explicit source port, sequence number and flags */
+static size_t seg(uint8_t *buf, uint16_t sport, uint32_t seq, uint8_t flags, const uint8_t *pl, size_t plen) {
+    size_t n = build_tcp(buf, 0, pl, plen);
+    buf[12] = 10; buf[15] = 1; buf[16] = 10; buf[19] = 2;               /* 10.0.0.1 -> 10.0.0.2 */
+    buf[20] = (uint8_t)(sport >> 8); buf[21] = (uint8_t)sport;
+    buf[22] = 0x01; buf[23] = 0xBB;                                      /* dport 443 */
+    buf[24] = (uint8_t)(seq >> 24); buf[25] = (uint8_t)(seq >> 16); buf[26] = (uint8_t)(seq >> 8); buf[27] = (uint8_t)seq;
+    buf[33] = flags;
+    return n;
+}
+
+static engine_result feed(engine *e, uint16_t sport, uint32_t seq, uint8_t flags,
+                          const uint8_t *pl, size_t plen, double t) {
+    uint8_t pkt[ENGINE_BUF + 100];
+    size_t n = seg(pkt, sport, seq, flags, pl, plen);
+    engine_result r;
+    engine_packet(e, pkt, n, t, &r);
+    return r;
+}
+
+/* offset of the server_name extension inside a ClientHello built by build_client_hello */
+static size_t sni_ext_offset(const uint8_t *ch, size_t chn, const char *sni) {
+    for (size_t i = 0; i + strlen(sni) <= chn; i++)
+        if (memcmp(ch + i, sni, strlen(sni)) == 0) return i - 9;
+    return 0;
+}
+
+static void test_engine(void) {
+    domainset ds;
+    ds_init(&ds, 16);
+    ds_add(&ds, "blocked.test", 12);
+    engine *e = calloc(1, sizeof *e);                                    /* ~2 MB: keep off the stack */
+    engine_init(e, &ds, 1);
+    uint8_t ch[1024];
+    engine_result r;
+    const uint8_t ack = 0x10, fin = 0x11;
+
+    /* 1. ClientHello split before the SNI, blocked domain */
+    size_t chn = build_client_hello(ch, "www.blocked.test");
+    size_t cut = sni_ext_offset(ch, chn, "www.blocked.test");
+    CHECK(cut > 5 && cut < chn);
+    uint32_t s0 = 1000;
+    r = feed(e, 40001, s0, ack, ch, cut, 0.0);
+    CHECK(!r.drop && r.kind == SNIFF_MORE);
+    r = feed(e, 40001, s0 + (uint32_t)cut, ack, ch + cut, chn - cut, 0.1);
+    CHECK(r.drop && r.kind == SNIFF_TLS && r.reassembled && strcmp(r.host, "www.blocked.test") == 0);
+    CHECK(r.match_len == 12);
+    r = feed(e, 40001, s0 + (uint32_t)cut, ack, ch + cut, chn - cut, 0.5);   /* retransmission */
+    CHECK(r.drop && r.flow_blocked);
+    r = feed(e, 40001, s0, ack, ch, cut, 0.6);                               /* even the first half */
+    CHECK(r.drop && r.flow_blocked);
+    r = feed(e, 40001, s0 + (uint32_t)chn, ack, NULL, 0, 0.7);               /* bare ACK passes */
+    CHECK(!r.drop);
+    r = feed(e, 40001, s0 + (uint32_t)chn, fin, NULL, 0, 0.8);               /* FIN passes, entry forgotten */
+    CHECK(!r.drop);
+    r = feed(e, 40001, 5000, ack, (const uint8_t *)"hello", 5, 0.9);
+    CHECK(!r.drop);
+    CHECK(e->reassembled == 1);
+
+    /* 2. split, allowed domain; retransmitted first half before the second */
+    chn = build_client_hello(ch, "allowed.test");
+    cut = sni_ext_offset(ch, chn, "allowed.test");
+    r = feed(e, 40002, 7, ack, ch, cut, 1.0);
+    CHECK(!r.drop && r.kind == SNIFF_MORE);
+    r = feed(e, 40002, 7, ack, ch, cut, 1.2);                                /* retransmit */
+    CHECK(!r.drop);
+    r = feed(e, 40002, 7 + (uint32_t)cut, ack, ch + cut, chn - cut, 1.3);
+    CHECK(!r.drop && r.kind == SNIFF_TLS && strcmp(r.host, "allowed.test") == 0);
+    r = feed(e, 40002, 7 + (uint32_t)chn, ack, (const uint8_t *)"\x17\x03\x03", 3, 1.4);  /* later data */
+    CHECK(!r.drop && r.kind == SNIFF_NONE);
+
+    /* 3. sequence number wrap-around between the halves */
+    chn = build_client_hello(ch, "blocked.test");
+    cut = sni_ext_offset(ch, chn, "blocked.test");
+    uint32_t sw = 0xFFFFFFFFu - (uint32_t)cut / 2;
+    r = feed(e, 40003, sw, ack, ch, cut, 2.0);
+    r = feed(e, 40003, sw + (uint32_t)cut, ack, ch + cut, chn - cut, 2.1);
+    CHECK(r.drop && r.reassembled);
+
+    /* 4. two connections interleaved */
+    uint8_t chb[1024], cha[1024];
+    size_t nb = build_client_hello(chb, "blocked.test"), na = build_client_hello(cha, "allowed.test");
+    size_t cb_ = sni_ext_offset(chb, nb, "blocked.test"), ca = sni_ext_offset(cha, na, "allowed.test");
+    feed(e, 41000, 100, ack, chb, cb_, 3.0);
+    feed(e, 41001, 900, ack, cha, ca, 3.0);
+    r = feed(e, 41001, 900 + (uint32_t)ca, ack, cha + ca, na - ca, 3.1);
+    CHECK(!r.drop && strcmp(r.host, "allowed.test") == 0);
+    r = feed(e, 41000, 100 + (uint32_t)cb_, ack, chb + cb_, nb - cb_, 3.1);
+    CHECK(r.drop && strcmp(r.host, "blocked.test") == 0);
+
+    /* 5. gap (missing segment): give up, accept */
+    feed(e, 42000, 10, ack, chb, cb_, 4.0);
+    r = feed(e, 42000, 10 + (uint32_t)cb_ + 5, ack, chb + cb_ + 5, nb - cb_ - 5, 4.1);
+    CHECK(!r.drop);
+
+    /* 6. second half arrives after the entry expired */
+    feed(e, 43000, 10, ack, chb, cb_, 5.0);
+    r = feed(e, 43000, 10 + (uint32_t)cb_, ack, chb + cb_, nb - cb_, 5.0 + ENGINE_TIMEOUT + 1);
+    CHECK(!r.drop);
+
+    /* 7. HTTP request with Host in the second segment */
+    const char *h1 = "GET / HTTP/1.1\r\nCookie: session=0123456789abcdef\r\n";
+    const char *h2 = "Accept: */*\r\nHost: blocked.test\r\n\r\n";
+    r = feed(e, 44000, 1, ack, (const uint8_t *)h1, strlen(h1), 6.0);
+    CHECK(!r.drop && r.kind == SNIFF_MORE);
+    r = feed(e, 44000, 1 + (uint32_t)strlen(h1), ack, (const uint8_t *)h2, strlen(h2), 6.1);
+    CHECK(r.drop && r.kind == SNIFF_HTTP && r.reassembled);
+
+    /* 8. endless headers without Host: give up after ENGINE_SEGMENTS segments */
+    const char *line = "X-Pad: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n";
+    uint32_t sq = 1;
+    unsigned long long gave = e->gave_up;
+    r = feed(e, 45000, sq, ack, (const uint8_t *)h1, strlen(h1), 7.0); sq += (uint32_t)strlen(h1);
+    for (int i = 0; i < ENGINE_SEGMENTS + 2; i++) {
+        r = feed(e, 45000, sq, ack, (const uint8_t *)line, strlen(line), 7.0);
+        sq += (uint32_t)strlen(line);
+        CHECK(!r.drop);
+    }
+    CHECK(e->gave_up == gave + 1);
+
+    /* 9. more pending connections than table slots: oldest are evicted, nothing breaks */
+    unsigned long long ev = e->evicted;
+    for (int i = 0; i < ENGINE_FLOWS + 50; i++) feed(e, (uint16_t)(50000 + i), 1, ack, chb, cb_, 8.0 + i * 1e-3);
+    CHECK(e->evicted >= ev + 50);
+    r = feed(e, (uint16_t)(50000 + ENGINE_FLOWS + 49), 1 + (uint32_t)cb_, ack, chb + cb_, nb - cb_, 9.0);
+    CHECK(r.drop);                                                       /* the newest is still tracked */
+
+    /* 10. random segment streams under ASan */
+    srand(99);
+    for (int it = 0; it < 200000; it++) {
+        uint8_t junk[300];
+        size_t n = (size_t)rand() % sizeof junk;
+        for (size_t i = 0; i < n; i++) junk[i] = (uint8_t)rand();
+        if (n && rand() % 3 == 0) junk[0] = 0x16;
+        if (n > 1 && rand() % 3 == 0) junk[1] = 0x03;
+        feed(e, (uint16_t)(rand() % 64), (uint32_t)rand() % 2000, (uint8_t)rand(), junk, n, 10.0 + it * 1e-4);
+    }
+    free(e);
+    ds_free(&ds);
 }
 
 int main(void) {
@@ -242,6 +392,7 @@ int main(void) {
     test_http();
     test_tls();
     test_fuzz();
+    test_engine();
     printf("%d checks, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }
